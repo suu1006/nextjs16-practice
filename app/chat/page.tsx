@@ -16,10 +16,19 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const stopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsLoading(false);
+    }
+  };
 
   const sendMessage = async () => {
     const userText = input.trim();
@@ -27,7 +36,6 @@ export default function ChatPage() {
 
     setIsLoading(true);
 
-    // 1) 사용자 메시지와 assistant 메시지 자리를 한번에 추가
     setMessages((prev) => [
       ...prev,
       { role: "user", content: userText },
@@ -35,11 +43,14 @@ export default function ChatPage() {
     ]);
     setInput("");
 
+    // 새로운 AbortController 생성
+    abortControllerRef.current = new AbortController();
+
     try {
-      // 2) 스트리밍 요청
       const res = await fetch("/api/chat", {
         method: "POST",
         body: JSON.stringify({ message: userText }),
+        signal: abortControllerRef.current.signal,
       });
 
       const reader = res.body!.getReader();
@@ -51,7 +62,6 @@ export default function ChatPage() {
 
         const chunk = decoder.decode(value);
 
-        // 3) 토큰이 들어올 때마다 마지막 assistant 메시지에 이어 붙이기
         setMessages((prev) => {
           const updated = [...prev];
           const lastIndex = updated.length - 1;
@@ -62,29 +72,34 @@ export default function ChatPage() {
           return updated;
         });
       }
-    } catch (error) {
-      console.error("Error:", error);
-      // 에러 발생 시 마지막 assistant 메시지에 에러 표시
-      setMessages((prev) => {
-        const updated = [...prev];
-        const lastIndex = updated.length - 1;
-        updated[lastIndex] = {
-          role: "assistant",
-          content: "오류가 발생했습니다. 다시 시도해주세요.",
-        };
-        return updated;
-      });
+    } catch (error: unknown) {
+      // AbortError는 사용자가 의도적으로 중지한 것이므로 에러 메시지를 표시하지 않음
+      if (error instanceof Error && error.name === "AbortError") {
+        console.log("Request aborted by user");
+      } else {
+        console.error("Error:", error);
+        setMessages((prev) => {
+          const updated = [...prev];
+          const lastIndex = updated.length - 1;
+          updated[lastIndex] = {
+            role: "assistant",
+            content: "오류가 발생했습니다. 다시 시도해주세요.",
+          };
+          return updated;
+        });
+      }
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-4 flex items-center justify-center">
+    <div className="h-screen bg-background text-foreground p-4 flex items-center justify-center">
       <div className="w-full max-w-xl border rounded-xl bg-card p-4 flex flex-col gap-4 shadow">
         <h1 className="font-bold text-lg">ollama chatbot</h1>
 
-        <div className="border rounded-lg p-3 flex flex-col gap-2 h-80 overflow-y-auto bg-muted">
+        <div className="border rounded-lg p-3 flex flex-col gap-2 h-[600px] overflow-y-auto bg-muted">
           {messages.map((m, i) => (
             <div
               key={i}
@@ -133,12 +148,12 @@ export default function ChatPage() {
                     code: ({ children, className }) => {
                       const isInline = !className;
                       return isInline ? (
-                        <code className="bg-gray-300 px-1.5 py-0.5 rounded text-sm">
+                        <code className="bg-indigo-100 text-indigo-800 px-2 py-1 rounded-md text-sm font-mono border border-indigo-300 shadow-sm">
                           {children}
                         </code>
                       ) : (
                         <code
-                          className={`block bg-gray-300 p-3 rounded text-sm mb-3 overflow-x-auto ${className}`}>
+                          className={`block bg-slate-700 text-slate-100 p-4 rounded-lg text-sm mb-4 overflow-x-auto font-mono border border-slate-600 shadow-md leading-relaxed ${className}`}>
                           {children}
                         </code>
                       );
@@ -164,19 +179,27 @@ export default function ChatPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (e.key === "Enter" && !isLoading) {
                 e.preventDefault();
                 sendMessage();
               }
             }}
             disabled={isLoading}
           />
-          <button
-            className="px-4 py-2 rounded-lg bg-primary text-primary-foreground disabled:opacity-50"
-            onClick={sendMessage}
-            disabled={isLoading}>
-            {isLoading ? "전송 중..." : "보내기"}
-          </button>
+          {isLoading ? (
+            <button
+              className="px-4 py-2 rounded-lg bg-white text-destructive-foreground hover:bg-white/90"
+              onClick={stopGeneration}>
+              <div className="size-3 bg-black" />
+            </button>
+          ) : (
+            <button
+              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground disabled:opacity-50"
+              onClick={sendMessage}
+              disabled={!input.trim()}>
+              보내기
+            </button>
+          )}
         </div>
       </div>
     </div>
