@@ -2,8 +2,22 @@
 
 import { NextRequest } from "next/server";
 
+// 모델 타입 정의
+type ModelType = "claude" | "gpt" | "gemini";
+
+// 모델 타입을 Ollama 모델명으로 매핑
+const MODEL_MAP: Record<ModelType, string> = {
+  claude: "llama3.1", // Claude 대신 llama3.1 사용
+  gpt: "mistral", // GPT 대신 mistral 사용
+  gemini: "gemma2", // Gemini 대신 gemma2 사용
+};
+
 export async function POST(req: NextRequest) {
-  const { message } = await req.json();
+  const { message, model } = await req.json();
+
+  // 모델이 지정되지 않았거나 잘못된 경우 기본값 사용
+  const modelType = (model as ModelType) || "claude";
+  const ollamaModel = MODEL_MAP[modelType] || MODEL_MAP.claude;
 
   const response = await fetch("http://localhost:11434/api/chat", {
     method: "POST",
@@ -11,7 +25,7 @@ export async function POST(req: NextRequest) {
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: "llama3.1",
+      model: ollamaModel,
       stream: true,
       messages: [
         {
