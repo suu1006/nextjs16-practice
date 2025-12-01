@@ -5,9 +5,9 @@ import { NextRequest } from "next/server";
 type ModelType = "claude" | "gpt" | "gemini";
 
 const MODEL_MAP: Record<ModelType, string> = {
-  claude: "llama-3.1-8b-instant", // 빠르고 대화 잘함 (기본값)
+  claude: "llama-3.1-8b-instant",
   gpt: "openai/gpt-oss-20b",
-  gemini: "llama-3.3-70b-versatile", // 긴 문장/코드에 강한 편
+  gemini: "llama-3.3-70b-versatile",
 };
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
