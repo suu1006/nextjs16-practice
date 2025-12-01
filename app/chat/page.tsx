@@ -15,6 +15,7 @@ type ModelType = "claude" | "gpt" | "gemini";
 type ModelResponse = {
   content: string;
   isLoading: boolean;
+  isCompleted: boolean;
   feedback: "like" | "dislike" | null;
 };
 
@@ -36,9 +37,9 @@ export default function ChatPage() {
   const [modelResponses, setModelResponses] = useState<
     Record<ModelType, ModelResponse>
   >({
-    claude: { content: "", isLoading: false, feedback: null },
-    gpt: { content: "", isLoading: false, feedback: null },
-    gemini: { content: "", isLoading: false, feedback: null },
+    claude: { content: "", isLoading: false, isCompleted: false, feedback: null },
+    gpt: { content: "", isLoading: false, isCompleted: false, feedback: null },
+    gemini: { content: "", isLoading: false, isCompleted: false, feedback: null },
   });
 
   // 각 모델별 요청 취소를 위한 AbortController
@@ -64,7 +65,7 @@ export default function ChatPage() {
       // 로딩 상태로 변경
       setModelResponses((prev) => ({
         ...prev,
-        [model]: { content: "", isLoading: true, feedback: null },
+        [model]: { content: "", isLoading: true, isCompleted: false, feedback: null },
       }));
 
       try {
@@ -115,7 +116,7 @@ export default function ChatPage() {
       } finally {
         setModelResponses((prev) => ({
           ...prev,
-          [model]: { ...prev[model], isLoading: false },
+          [model]: { ...prev[model], isLoading: false, isCompleted: true },
         }));
         abortControllersRef.current[model] = null;
       }
@@ -222,18 +223,21 @@ export default function ChatPage() {
               modelName="Claude 3.7 Sonnet"
               isSelected={selectedModel === "claude"}
               isLoading={modelResponses.claude.isLoading}
+              isCompleted={modelResponses.claude.isCompleted}
               onClick={() => setSelectedModel("claude")}
             />
             <ModelTab
               modelName="GPT 4.0"
               isSelected={selectedModel === "gpt"}
               isLoading={modelResponses.gpt.isLoading}
+              isCompleted={modelResponses.gpt.isCompleted}
               onClick={() => setSelectedModel("gpt")}
             />
             <ModelTab
               modelName="Gemini Pro"
               isSelected={selectedModel === "gemini"}
               isLoading={modelResponses.gemini.isLoading}
+              isCompleted={modelResponses.gemini.isCompleted}
               onClick={() => setSelectedModel("gemini")}
             />
           </div>

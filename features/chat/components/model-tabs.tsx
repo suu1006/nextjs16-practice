@@ -2,6 +2,7 @@ type ModelTabProps = {
   modelName: string;
   isSelected: boolean;
   isLoading: boolean;
+  isCompleted: boolean;
   onClick: () => void;
 };
 
@@ -9,6 +10,7 @@ export function ModelTab({
   modelName,
   isSelected,
   isLoading,
+  isCompleted,
   onClick,
 }: ModelTabProps) {
   return (
@@ -23,8 +25,10 @@ export function ModelTab({
           <>
             <span>응답 생성 중...</span>
           </>
-        ) : (
+        ) : isCompleted ? (
           "Completed"
+        ) : (
+          "Ready"
         )}
       </div>
     </div>
