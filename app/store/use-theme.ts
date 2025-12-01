@@ -12,7 +12,7 @@ interface ThemeState {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set) => ({
-      theme: "light" as Theme,
+      theme: "dark" as Theme, // 기본 dark 테마
       hasHydrated: false,
       toggle: () =>
         set((state) => ({
