@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
-import { ThumbsUp, ThumbsDown, Copy } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Copy, Check } from "lucide-react";
 import { markdownComponents } from "@/components/ui/markdown-components";
 import { ModelTab } from "@/features/chat/components/model-tabs";
 
@@ -18,6 +18,49 @@ type ModelResponse = {
   isCompleted: boolean;
   feedback: "like" | "dislike" | null;
 };
+
+// 답변 영역 컴포넌트 (메모이제이션)
+const ResponseArea = memo(
+  ({ response }: { response: ModelResponse }) => {
+    if (response.isLoading && !response.content) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+          <div className="text-gray-400">응답을 생성하고 있습니다...</div>
+        </div>
+      );
+    }
+
+    if (response.content) {
+      return (
+        <div className="prose prose-invert max-w-none">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={markdownComponents}>
+            {response.content}
+          </ReactMarkdown>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-gray-400">
+          아래에서 질문을 입력하면 세 모델이 모두 응답합니다.
+        </div>
+      </div>
+    );
+  },
+  (prevProps, nextProps) => {
+    // 깊은 비교를 통한 최적화
+    return (
+      prevProps.response.content === nextProps.response.content &&
+      prevProps.response.isLoading === nextProps.response.isLoading
+    );
+  }
+);
+
+ResponseArea.displayName = "ResponseArea";
 
 export default function ChatPage() {
   // 현재 프롬프트 (사용자가 입력한 질문)
@@ -37,9 +80,19 @@ export default function ChatPage() {
   const [modelResponses, setModelResponses] = useState<
     Record<ModelType, ModelResponse>
   >({
-    claude: { content: "", isLoading: false, isCompleted: false, feedback: null },
+    claude: {
+      content: "",
+      isLoading: false,
+      isCompleted: false,
+      feedback: null,
+    },
     gpt: { content: "", isLoading: false, isCompleted: false, feedback: null },
-    gemini: { content: "", isLoading: false, isCompleted: false, feedback: null },
+    gemini: {
+      content: "",
+      isLoading: false,
+      isCompleted: false,
+      feedback: null,
+    },
   });
 
   // 각 모델별 요청 취소를 위한 AbortController
@@ -65,7 +118,12 @@ export default function ChatPage() {
       // 로딩 상태로 변경
       setModelResponses((prev) => ({
         ...prev,
-        [model]: { content: "", isLoading: true, isCompleted: false, feedback: null },
+        [model]: {
+          content: "",
+          isLoading: true,
+          isCompleted: false,
+          feedback: null,
+        },
       }));
 
       try {
@@ -138,6 +196,17 @@ export default function ChatPage() {
     [streamResponse]
   );
 
+  // modelResponse가 변경될 때만 다시 계산
+  const isAnyLoading = useMemo(
+    () => Object.values(modelResponses).some((response) => response.isLoading),
+    [modelResponses]
+  );
+
+  const currentResponse = useMemo(
+    () => modelResponses[selectedModel],
+    [modelResponses, selectedModel]
+  );
+
   // 후속 질문 전송
   const sendFollowUpQuestion = useCallback(() => {
     const question = followUpInput.trim();
@@ -150,17 +219,27 @@ export default function ChatPage() {
   // Enter 키로 전송
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      // 세 모델 중 하나라도 로딩 중이면 전송 불가
-      const isAnyLoading = Object.values(modelResponses).some(
-        (response) => response.isLoading
-      );
-
       if (e.key === "Enter" && !isAnyLoading) {
         e.preventDefault();
         sendFollowUpQuestion();
       }
     },
-    [sendFollowUpQuestion, modelResponses]
+    [sendFollowUpQuestion, isAnyLoading]
+  );
+
+  // 피드백 핸들러 (중복 코드 제거)
+  const handleFeedback = useCallback(
+    (feedbackType: "like" | "dislike") => {
+      setModelResponses((prev) => ({
+        ...prev,
+        [selectedModel]: {
+          ...prev[selectedModel],
+          feedback:
+            prev[selectedModel].feedback === feedbackType ? null : feedbackType,
+        },
+      }));
+    },
+    [selectedModel]
   );
 
   // 복사 기능
@@ -176,6 +255,11 @@ export default function ChatPage() {
       console.error("복사 실패:", error);
     }
   }, [selectedModel, modelResponses]);
+
+  // 모델 선택 핸들러 메모이제이션
+  const handleSelectClaude = useCallback(() => setSelectedModel("claude"), []);
+  const handleSelectGpt = useCallback(() => setSelectedModel("gpt"), []);
+  const handleSelectGemini = useCallback(() => setSelectedModel("gemini"), []);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -217,54 +301,34 @@ export default function ChatPage() {
 
         {/* 모델 응답 표시 영역 */}
         <div className="h-[550px] rounded-lg flex flex-col mt-6 border border-gray-200/50 dark:border-white/10">
-          {/* 모델 탭 */}
+          {/* 모델 탭 - 재렌더링될때마다 새로운 함수가 생성되지않도록  */}
           <div className="flex flex-row items-center justify-between w-full border-b border-gray-200/50 dark:border-white/10">
             <ModelTab
               modelName="Claude 3.7 Sonnet"
               isSelected={selectedModel === "claude"}
               isLoading={modelResponses.claude.isLoading}
               isCompleted={modelResponses.claude.isCompleted}
-              onClick={() => setSelectedModel("claude")}
+              onClick={handleSelectClaude}
             />
             <ModelTab
               modelName="GPT 4.0"
               isSelected={selectedModel === "gpt"}
               isLoading={modelResponses.gpt.isLoading}
               isCompleted={modelResponses.gpt.isCompleted}
-              onClick={() => setSelectedModel("gpt")}
+              onClick={handleSelectGpt}
             />
             <ModelTab
               modelName="Gemini Pro"
               isSelected={selectedModel === "gemini"}
               isLoading={modelResponses.gemini.isLoading}
               isCompleted={modelResponses.gemini.isCompleted}
-              onClick={() => setSelectedModel("gemini")}
+              onClick={handleSelectGemini}
             />
           </div>
 
           {/* 답변 영역 */}
           <div className="flex-1 w-full p-4 text-white overflow-y-auto">
-            {modelResponses[selectedModel].isLoading &&
-            !modelResponses[selectedModel].content ? (
-              <div className="flex flex-col items-center justify-center h-full gap-3">
-                <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
-                <div className="text-gray-400">응답을 생성하고 있습니다...</div>
-              </div>
-            ) : modelResponses[selectedModel].content ? (
-              <div className="prose prose-invert max-w-none">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={markdownComponents}>
-                  {modelResponses[selectedModel].content}
-                </ReactMarkdown>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-gray-400">
-                  아래에서 질문을 입력하면 세 모델이 모두 응답합니다.
-                </div>
-              </div>
-            )}
+            <ResponseArea response={currentResponse} />
           </div>
 
           {/* 피드백 버튼 영역 */}
@@ -273,21 +337,10 @@ export default function ChatPage() {
             <Button
               size="sm"
               variant={
-                modelResponses[selectedModel].feedback === "like"
-                  ? "default"
-                  : "outline"
+                currentResponse.feedback === "like" ? "default" : "outline"
               }
               className="flex items-center gap-1"
-              onClick={() =>
-                setModelResponses((prev) => ({
-                  ...prev,
-                  [selectedModel]: {
-                    ...prev[selectedModel],
-                    feedback:
-                      prev[selectedModel].feedback === "like" ? null : "like",
-                  },
-                }))
-              }>
+              onClick={() => handleFeedback("like")}>
               <ThumbsUp className="w-4 h-4" />
             </Button>
 
@@ -295,33 +348,27 @@ export default function ChatPage() {
             <Button
               size="sm"
               variant={
-                modelResponses[selectedModel].feedback === "dislike"
-                  ? "default"
-                  : "outline"
+                currentResponse.feedback === "dislike" ? "default" : "outline"
               }
               className="flex items-center gap-1"
-              onClick={() =>
-                setModelResponses((prev) => ({
-                  ...prev,
-                  [selectedModel]: {
-                    ...prev[selectedModel],
-                    feedback:
-                      prev[selectedModel].feedback === "dislike"
-                        ? null
-                        : "dislike",
-                  },
-                }))
-              }>
+              onClick={() => handleFeedback("dislike")}>
               <ThumbsDown className="w-4 h-4" />
             </Button>
 
             {/* copy 버튼 */}
             <Button
               size="sm"
-              variant="outline"
-              className="flex items-center gap-1"
+              variant={copied ? "default" : "outline"}
+              className="flex items-center gap-1 transition-all"
               onClick={handleCopy}>
-              <Copy className="w-4 h-4" />
+              {copied ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span className="text-xs">복사됨</span>
+                </>
+              ) : (
+                <Copy className="w-4 h-4" />
+              )}
             </Button>
           </div>
         </div>
@@ -334,18 +381,15 @@ export default function ChatPage() {
             value={followUpInput}
             onChange={(e) => setFollowUpInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={Object.values(modelResponses).some((r) => r.isLoading)}
+            disabled={isAnyLoading}
           />
 
           <Button
             size="sm"
             className="h-8 px-3 flex items-center gap-1"
             onClick={sendFollowUpQuestion}
-            disabled={
-              !followUpInput.trim() ||
-              Object.values(modelResponses).some((r) => r.isLoading)
-            }>
-            {Object.values(modelResponses).some((r) => r.isLoading) ? (
+            disabled={!followUpInput.trim() || isAnyLoading}>
+            {isAnyLoading ? (
               <>
                 <span>⏹️</span>
               </>

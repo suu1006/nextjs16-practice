@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 type ModelTabProps = {
   modelName: string;
   isSelected: boolean;
@@ -6,7 +8,8 @@ type ModelTabProps = {
   onClick: () => void;
 };
 
-export function ModelTab({
+export const ModelTab = memo(function ModelTab({
+  // 재렌더링될때마다 새로운 함수가 생성되지않도록
   modelName,
   isSelected,
   isLoading,
@@ -33,4 +36,4 @@ export function ModelTab({
       </div>
     </div>
   );
-}
+});
