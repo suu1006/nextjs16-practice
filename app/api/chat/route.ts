@@ -1,96 +1,114 @@
 // app/api/chat/route.ts
-
 import { NextRequest } from "next/server";
 
 // 모델 타입 정의
 type ModelType = "claude" | "gpt" | "gemini";
 
-// 모델 타입을 Ollama 모델명으로 매핑
 const MODEL_MAP: Record<ModelType, string> = {
-  claude: "llama3.1", // Claude 대신 llama3.1 사용
-  gpt: "mistral", // GPT 대신 mistral 사용
-  gemini: "llama3", // Gemini 대신 gemma2 사용
+  claude: "llama-3.1-8b-instant", // 빠르고 대화 잘함 (기본값)
+  gpt: "openai/gpt-oss-20b",
+  gemini: "llama-3.3-70b-versatile", // 긴 문장/코드에 강한 편
 };
 
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+
 export async function POST(req: NextRequest) {
-  const { message, model } = await req.json();
+  try {
+    const { message, model } = await req.json();
 
-  // 모델이 지정되지 않았거나 잘못된 경우 기본값 사용
-  const modelType = (model as ModelType) || "claude";
-  const ollamaModel = MODEL_MAP[modelType] || MODEL_MAP.claude;
+    const modelType: ModelType = (model as ModelType) || "claude";
+    const groqModel = MODEL_MAP[modelType] ?? MODEL_MAP.claude;
 
-  const response = await fetch("http://localhost:11434/api/chat", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: ollamaModel,
-      stream: true,
-      messages: [
-        {
-          role: "system",
-          content:
-            "당신은 친절한 AI 어시스턴트입니다. 모든 답변을 한국어로 작성해주세요. 모든 답변이 사실인지 체크 후 답변해주세요",
-        },
-        {
-          role: "user",
-          content: message,
-        },
-      ],
-    }),
-  });
+    const groqRes = await fetch(GROQ_API_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: groqModel,
+        stream: true, // groq에서는 sse 로 받되
+        messages: [
+          {
+            role: "system",
+            content:
+              "당신은 친절한 ai 어시스턴트입니다. 모든 답변을 한국어로 작성하고, 가능한 한 사실을 기반으로 답변하세요.",
+          },
+          {
+            role: "user",
+            content: message,
+          },
+        ],
+      }),
+    });
 
-  if (!response.body) {
-    return new Response("no stream", { status: 500 });
-  }
+    if (!groqRes.ok || !groqRes.body) {
+      const errorText = await groqRes.text().catch(() => "");
+      console.error("groq error:", errorText);
+      return new Response("llm api error", { status: 500 });
+    }
 
-  // ollama → next.js → client 로 스트림 전달
-  const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      const reader = response.body!.getReader();
-      let buffer = "";
+    // sse → 순수 텍스트로 변환해서 클라이언트로 스트리밍
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const reader = groqRes.body!.getReader();
+        let buffer = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
+            buffer += decoder.decode(value, { stream: true });
 
-        // ollama는 NDJSON → newline 단위로 자름
-        const lines = buffer.split("\n");
+            const lines = buffer.split("\n");
+            // 마지막 줄은 잘릴 수 있으니까 버퍼에 남겨두고, 그 전까지만 처리
+            for (let i = 0; i < lines.length - 1; i++) {
+              const line = lines[i].trim();
+              if (!line || !line.startsWith("data:")) continue;
 
-        for (let i = 0; i < lines.length - 1; i++) {
-          const line = lines[i].trim();
-          if (!line) continue;
+              const data = line.slice("data:".length).trim();
+              if (data === "[DONE]") {
+                controller.close();
+                return;
+              }
 
-          // 각 줄은 json 형태
-          try {
-            const json = JSON.parse(line);
-            const token = json.message?.content ?? "";
+              try {
+                const json = JSON.parse(data);
+                const token: string = json.choices?.[0]?.delta?.content ?? "";
 
-            if (token) {
-              controller.enqueue(encoder.encode(token));
+                if (token) {
+                  controller.enqueue(encoder.encode(token));
+                }
+              } catch (e) {
+                console.error("sse parse error:", e, data);
+              }
             }
-          } catch (e) {
-            console.error("parse error:", e);
+
+            buffer = lines[lines.length - 1]; // 마지막 줄은 다음 chunk와 합쳐서 다시 파싱
           }
+        } catch (e) {
+          console.error("stream error:", e);
+        } finally {
+          controller.close();
         }
+      },
+    });
 
-        buffer = lines[lines.length - 1];
-      }
-
-      controller.close();
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "content-type": "text/plain; charset=utf-8",
-      "cache-control": "no-cache",
-    },
-  });
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        // 여기서는 sse가 아니라 "순수 텍스트 스트림"으로 보냄
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-cache",
+        "x-content-type-options": "nosniff",
+      },
+    });
+  } catch (e) {
+    console.error("chat route error:", e);
+    return new Response("internal error", { status: 500 });
+  }
 }
