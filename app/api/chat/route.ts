@@ -9,7 +9,7 @@ type ModelType = "claude" | "gpt" | "gemini";
 const MODEL_MAP: Record<ModelType, string> = {
   claude: "llama3.1", // Claude 대신 llama3.1 사용
   gpt: "mistral", // GPT 대신 mistral 사용
-  gemini: "gemma2", // Gemini 대신 gemma2 사용
+  gemini: "llama3", // Gemini 대신 gemma2 사용
 };
 
 export async function POST(req: NextRequest) {

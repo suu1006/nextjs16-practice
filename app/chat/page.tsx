@@ -7,7 +7,8 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { ThumbsUp, ThumbsDown, Copy } from "lucide-react";
-import { markdownComponents } from "@/app/components/common/markdown-components";
+import { markdownComponents } from "@/components/ui/markdown-components";
+import { ModelTab } from "@/features/chat/components/model-tabs";
 
 type ModelType = "claude" | "gpt" | "gemini";
 
@@ -217,54 +218,24 @@ export default function ChatPage() {
         <div className="h-[550px] rounded-lg flex flex-col mt-6 border border-gray-200/50 dark:border-white/10">
           {/* 모델 탭 */}
           <div className="flex flex-row items-center justify-between w-full border-b border-gray-200/50 dark:border-white/10">
-            <div
-              className={`text-white p-4 w-1/3 text-xl hover:bg-gray-100/10 cursor-pointer transition-all ${
-                selectedModel === "claude" ? "border-b-2 border-white" : ""
-              }`}
-              onClick={() => setSelectedModel("claude")}>
-              Claude 3.7 Sonnet
-              <div className="text-base text-gray-500 flex items-center gap-1">
-                {modelResponses.claude.isLoading ? (
-                  <>
-                    <span>응답 생성 중...</span>
-                  </>
-                ) : (
-                  "준비됨"
-                )}
-              </div>
-            </div>
-            <div
-              className={`text-white p-4 w-1/3 text-xl hover:bg-gray-100/10 cursor-pointer transition-all ${
-                selectedModel === "gpt" ? "border-b-2 border-white" : ""
-              }`}
-              onClick={() => setSelectedModel("gpt")}>
-              GPT 4.0
-              <div className="text-base text-gray-500 flex items-center gap-1">
-                {modelResponses.gpt.isLoading ? (
-                  <>
-                    <span>응답 생성 중...</span>
-                  </>
-                ) : (
-                  "준비됨"
-                )}
-              </div>
-            </div>
-            <div
-              className={`text-white p-4 w-1/3 text-xl hover:bg-gray-100/10 cursor-pointer transition-all ${
-                selectedModel === "gemini" ? "border-b-2 border-white" : ""
-              }`}
-              onClick={() => setSelectedModel("gemini")}>
-              Gemini Pro
-              <div className="text-base text-gray-500 flex items-center gap-1">
-                {modelResponses.gemini.isLoading ? (
-                  <>
-                    <span>응답 생성 중...</span>
-                  </>
-                ) : (
-                  "준비됨"
-                )}
-              </div>
-            </div>
+            <ModelTab
+              modelName="Claude 3.7 Sonnet"
+              isSelected={selectedModel === "claude"}
+              isLoading={modelResponses.claude.isLoading}
+              onClick={() => setSelectedModel("claude")}
+            />
+            <ModelTab
+              modelName="GPT 4.0"
+              isSelected={selectedModel === "gpt"}
+              isLoading={modelResponses.gpt.isLoading}
+              onClick={() => setSelectedModel("gpt")}
+            />
+            <ModelTab
+              modelName="Gemini Pro"
+              isSelected={selectedModel === "gemini"}
+              isLoading={modelResponses.gemini.isLoading}
+              onClick={() => setSelectedModel("gemini")}
+            />
           </div>
 
           {/* 답변 영역 */}
@@ -362,17 +333,6 @@ export default function ChatPage() {
             disabled={Object.values(modelResponses).some((r) => r.isLoading)}
           />
 
-          <div className="text-xs text-gray-400 px-2 flex items-center gap-1">
-            {Object.values(modelResponses).some((r) => r.isLoading) ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>생성 중</span>
-              </>
-            ) : (
-              "All Models"
-            )}
-          </div>
-
           <Button
             size="sm"
             className="h-8 px-3 flex items-center gap-1"
@@ -383,8 +343,7 @@ export default function ChatPage() {
             }>
             {Object.values(modelResponses).some((r) => r.isLoading) ? (
               <>
-                <Loader2 className="w-3 h-3 animate-spin" />
-                <span>전송 중</span>
+                <span>⏹️</span>
               </>
             ) : (
               "Send"
